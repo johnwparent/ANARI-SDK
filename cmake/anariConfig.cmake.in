@@ -3,6 +3,9 @@
 
 @PACKAGE_INIT@
 
+# Kept before find_dependency(), whose packages' own PACKAGE_INIT may reset it
+set(ANARI_INSTALL_PREFIX ${PACKAGE_PREFIX_DIR})
+
 include(CMakeFindDependencyMacro)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -28,8 +31,10 @@ if (NOT TARGET anari::anari)
   Consuming ANARI-SDK from a build directory is not supported.")
 endif()
 
+# Relative to the install prefix, whatever the depth of CMAKE_INSTALL_LIBDIR
+# (e.g. lib/x86_64-linux-gnu, or the 'anari' Python wheel's anari/sdk/lib)
 set(ANARI_DATAROOTDIR
-  ${CMAKE_CURRENT_LIST_DIR}/../../../@CMAKE_INSTALL_DATAROOTDIR@/anari
+  ${ANARI_INSTALL_PREFIX}/@CMAKE_INSTALL_DATAROOTDIR@/anari
 )
 
 if (@INSTALL_CODE_GEN_SCRIPTS@)

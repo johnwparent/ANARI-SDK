@@ -1,0 +1,30 @@
+## Copyright 2026 The Khronos Group
+## SPDX-License-Identifier: Apache-2.0
+
+# Packages the device as the 'hecore' Python package: 'pip install .' builds it
+# against the ANARI SDK in the 'anari' package (a build requirement, found by
+# CMakeLists.txt) and installs it next to that package, which it depends on.
+
+[project]
+name = "hecore"
+version = "0.1.0"
+description = "Minimal helium-based ANARI device (template)"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+# The device implements the frontend's device interface (anari/backend) of the
+# SDK it was built against: depend on that SDK release series
+dependencies = ["anari~=0.17.0"]
+
+[build-system]
+requires = ["py-build-cmake~=0.5.1", "anari~=0.17.0"]
+build-backend = "py_build_cmake.build"
+
+[tool.py-build-cmake.module]
+generated = "package"
+
+[tool.py-build-cmake.cmake]
+build_type = "Release"
+source_path = "."
+build_args = ["--parallel"]
+install_components = ["hecore_module"]
+install_args = ["--strip"]

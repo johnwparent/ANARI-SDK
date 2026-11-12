@@ -1,24 +1,123 @@
+## Copyright 2021-2026 The Khronos Group
+## SPDX-License-Identifier: Apache-2.0
+
 [project] # Project metadata
 name = "anari"
-requires-python = ">=3.7"
+# The SDK version (ANARI_SDK_VERSION in CMakeLists.txt), or a post-release of
+# it (0.17.0.post1) for a packaging-only respin; see python_bindings.md
+version = "0.17.0"
+description = "Python bindings and device SDK for the Khronos ANARI rendering API"
+requires-python = ">=3.10"
 readme = "README.md"
-license = "APACHE"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
-dependencies = ["cffi","numpy"]
-version = "0.15"
+dependencies = ["cffi", "numpy"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+
+[project.urls]
+Homepage = "https://www.khronos.org/anari/"
+Source = "https://github.com/KhronosGroup/ANARI-SDK"
+Issues = "https://github.com/KhronosGroup/ANARI-SDK/issues"
 
 [build-system] # How pip and other frontends should build this project
-requires = ["py-build-cmake~=0.5.0", "cffi"]
+requires = ["py-build-cmake~=0.5.1", "cffi"]
 build-backend = "py_build_cmake.build"
-
-[tool.py-build-cmake.sdist]
-include = ['*']
 
 [tool.py-build-cmake.module]
 generated = "package"
 
+[tool.py-build-cmake.sdist]
+include = ['*']
+
 [tool.py-build-cmake.cmake] # How to build the CMake project
-build_type = "RelWithDebInfo"
+minimum_version = "3.15"
+build_type = "Release"
 source_path = "."
-build_args = ["--target", "neo_bindings"]
-install_components = ["python_module"]
+build_args = ["--parallel"]
+# "" is the default install (the SDK: headers, libraries, CMake package and
+# code_gen); python_module is the cffi bindings and the Python package
+install_components = ["", "python_module"]
+# Strip symbols from the installed shared libraries (a no-op with MSVC)
+install_args = ["--strip"]
+
+[tool.py-build-cmake.cmake.options]
+ANARI_PYTHON_WHEEL = "ON"
+INSTALL_PYTHON_BINDINGS = "ON"
+BUILD_TESTING = "OFF"
+BUILD_EXAMPLES = "OFF"
+BUILD_CTS = "OFF"
+BUILD_CAT = "OFF"
+BUILD_HELIDE_DEVICE = "OFF"
+BUILD_CAPTURE_DEVICE = "OFF"
+BUILD_SINK_DEVICE = "ON"
+BUILD_DEBUG_DEVICE = "ON"
+INSTALL_VIEWER_LIBRARY = "OFF"
+# The SDK installs as a normal prefix inside the package: site-packages/anari/sdk
+CMAKE_INSTALL_BINDIR = "anari/sdk/bin"
+CMAKE_INSTALL_LIBDIR = "anari/sdk/lib"
+CMAKE_INSTALL_INCLUDEDIR = "anari/sdk/include"
+CMAKE_INSTALL_DATAROOTDIR = "anari/sdk/share"
+
+[tool.cibuildwheel]
+build = "cp3*"
+# Free-threaded CPython is not supported by the cffi module (and PyPy builds
+# are off by default)
+skip = ["*t-*"]
+build-frontend = "build"
+test-requires = []
+# Quick smoke test in the build environment; the full validation suite
+# (tests/python) runs in separate jobs against the installed wheels
+test-command = "python -c \"import anari; assert anari.loadLibrary('sink') is not None\""
+
+[tool.cibuildwheel.linux]
+archs = ["native"]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+musllinux-x86_64-image = "musllinux_1_2"
+musllinux-aarch64-image = "musllinux_1_2"
+environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+
+[[tool.cibuildwheel.overrides]]
+# musllinux (PEP 656) doesn't allow linking libstdc++/libgcc_s from the
+# system, and auditwheel would copy the toolchain's into the wheel: link them
+# statically instead, so the wheel depends on nothing but musl. (manylinux,
+# PEP 600, allows the system's libstdc++, and the manylinux toolchain already
+# links its newer symbols statically.) The libraries talk to each other through
+# ANARI's C API, so each carrying its own C++ runtime is safe.
+select = "*-musllinux*"
+inherit.environment = "append"
+environment = { LDFLAGS = "-static-libstdc++ -static-libgcc" }
+
+[tool.cibuildwheel.macos]
+# Dual-architecture: one wheel for Apple silicon and one for Intel, each built
+# for its own architecture (ARCHFLAGS, below), so a vendor's device links the
+# SDK's static libraries for the architecture it builds for
+archs = ["arm64", "x86_64"]
+# Read by py-build-cmake for CMAKE_OSX_DEPLOYMENT_TARGET and the wheel tag
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0", CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+
+# Read by py-build-cmake for CMAKE_OSX_ARCHITECTURES and the wheel tag (and
+# what cibuildwheel sets itself when it cross-compiles)
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_arm64"
+inherit.environment = "append"
+environment = { ARCHFLAGS = "-arch arm64" }
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_x86_64"
+inherit.environment = "append"
+environment = { ARCHFLAGS = "-arch x86_64" }
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+before-build = "pip install delvewheel"
+# Check only: every DLL dependency must resolve inside the wheel or the system
+repair-wheel-command = "delvewheel show --analyze-existing {wheel} && copy {wheel} {dest_dir}"

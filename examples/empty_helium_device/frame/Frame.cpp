@@ -81,6 +81,10 @@ void Frame::renderFrame()
 {
   auto start = std::chrono::steady_clock::now();
 
+  // anariCommitParameters() only queues objects in helium's commit buffer:
+  // flush it so this frame, and every object it reaches, is up to date.
+  deviceState()->commitBuffer.flush();
+
   // This is where the actual rendering work is done. As a placeholder we just
   // write the background color to every pixel, but this is where a frame
   // rendering operation is started. Note that asynchronous implementations

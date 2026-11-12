@@ -1,4 +1,41 @@
 from .${ANARI_MODULE_NAME} import lib, ffi
+
+import os as _os
+import sys as _sys
+from pathlib import Path as _Path
+
+# The package's version (the SDK's, or a post-release of it) and the SDK's
+__version__ = '${ANARI_PYTHON_PACKAGE_VERSION}'
+sdk_version = '${ANARI_SDK_VERSION}'
+
+def sdk_dir():
+    """Install prefix of the ANARI SDK shipped in this package (headers,
+    libraries, CMake package and code_gen), or None if absent."""
+    path = _Path(__file__).resolve().parent / 'sdk'
+    return path if path.is_dir() else None
+
+def cmake_dir():
+    """Directory holding anariConfig.cmake: pass it as anari_DIR (or add it to
+    CMAKE_PREFIX_PATH) to build devices with find_package(anari)."""
+    sdk = sdk_dir()
+    if sdk is None:
+        return None
+    found = sorted((sdk / 'lib' / 'cmake').glob('anari-*'))
+    return found[-1] if found else None
+
+def include_dir():
+    """Directory holding anari/anari.h and the device (helium) headers."""
+    sdk = sdk_dir()
+    return None if sdk is None else sdk / 'include'
+
+def library_dir():
+    """Directory holding the shared libraries: libanari and the sample devices
+    (anari_library_sink, anari_library_debug)."""
+    sdk = sdk_dir()
+    if sdk is None:
+        return None
+    return sdk / ('bin' if _sys.platform == 'win32' else 'lib')
+
 from .utils import *
 from .utils import _typeof, _convert_pointer, _basepointer, _conversions, _from_string_list, _elements
 
@@ -483,8 +520,25 @@ class Library:
 
 
 def loadLibrary(name, callback = ffi.NULL):
+    """Load an ANARI library by name, or 'name,<directory>/' for one at a given
+    location. A bare name (or the one 'environment' selects through
+    ANARI_LIBRARY) is first looked for among the libraries shipped in this
+    package (library_dir()), e.g. the 'sink' and 'debug' sample devices, then
+    through the frontend's usual library search."""
     cbwrapper = ffi.NULL if callback == ffi.NULL else lib.ANARIStatusCallback_python
-    result = lib.anariLoadLibrary(name.encode('utf-8'), cbwrapper, callback)
+    if name == 'environment' and _os.environ.get('ANARI_LIBRARY'):
+        name = _os.environ['ANARI_LIBRARY']
+    result = ffi.NULL
+    libdir = library_dir()
+    if ',' not in name and name != 'environment' and libdir is not None:
+        filename = ('anari_library_%s.dll' if _sys.platform == 'win32'
+                    else 'libanari_library_%s.dylib' if _sys.platform == 'darwin'
+                    else 'libanari_library_%s.so') % name
+        if (libdir / filename).is_file():
+            located = name + ',' + str(libdir) + _os.sep
+            result = lib.anariLoadLibrary(located.encode('utf-8'), cbwrapper, callback)
+    if result == ffi.NULL:
+        result = lib.anariLoadLibrary(name.encode('utf-8'), cbwrapper, callback)
     if result == ffi.NULL:
         return None
     else:

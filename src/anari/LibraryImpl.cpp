@@ -54,14 +54,15 @@ std::string library_location()
   std::string path = std::string(pathBuf);
   path.resize(path.rfind('\\') + 1);
 #else
-  const char *anchor = "_anari_anchor";
-  void *handle = dlsym(RTLD_DEFAULT, anchor);
-  if (!handle)
-    return std::string();
-
+  // Ask about an address in this library itself, not a dlsym(RTLD_DEFAULT)
+  // lookup: that only searches the global scope, which this library isn't in
+  // when it was loaded with RTLD_LOCAL (e.g. as the dependency of a device
+  // that Python or another frontend dlopen()ed), and could find another copy
+  // of the frontend in the process. This function has internal linkage, so its
+  // address can't be interposed by another library's symbol.
   Dl_info di;
-  int ret = dladdr(handle, &di);
-  if (!ret || !di.dli_saddr || !di.dli_fname)
+  int ret = dladdr(reinterpret_cast<void *>(&library_location), &di);
+  if (!ret || !di.dli_fname)
     return std::string();
 
   std::string path = std::string(di.dli_fname);

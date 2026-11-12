@@ -41,6 +41,22 @@ include(GNUInstallDirs)
 
 ## Dependencies ##
 
+# Built as a Python package (pip install, see pyproject.toml): use the ANARI SDK
+# shipped in the 'anari' package that the build depends on, which is also the
+# one the device will load into
+if (DEFINED PY_BUILD_CMAKE_VERSION AND NOT anari_DIR)
+  execute_process(
+    COMMAND ${PY_BUILD_CMAKE_BUILD_PYTHON_INTERPRETER} -m anari --cmake-dir
+    OUTPUT_VARIABLE anari_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE ANARI_PYTHON_PACKAGE_RESULT
+  )
+  if (NOT ANARI_PYTHON_PACKAGE_RESULT EQUAL 0)
+    message(FATAL_ERROR "the 'anari' Python package was not found: it is a "
+      "build requirement in pyproject.toml")
+  endif()
+endif()
+
 find_package(anari REQUIRED)
 
 
@@ -83,4 +99,26 @@ anari_generate_queries(
   DEVICE_TARGET ${PROJECT_NAME}
   CPP_NAMESPACE hecore
   JSON_DEFINITIONS_FILE ${CMAKE_CURRENT_SOURCE_DIR}/HeCoreDefinitions.json
+)
+
+## Python package ##
+
+# The device library and a module that loads it (code_gen's
+# device_trampoline.py.in), installed as the 'hecore' Python package by
+# pyproject.toml (install_components): 'import hecore; hecore.newDevice()'
+set(DEVICE_LIBRARY_NAME hecore)
+configure_file(${ANARI_CODE_GEN_ROOT}/device_trampoline.py.in
+  ${CMAKE_CURRENT_BINARY_DIR}/__init__.py)
+
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/__init__.py
+  EXCLUDE_FROM_ALL
+  COMPONENT hecore_module
+  DESTINATION hecore
+)
+install(TARGETS ${PROJECT_NAME}
+  EXCLUDE_FROM_ALL
+  COMPONENT hecore_module
+  LIBRARY DESTINATION hecore
+  RUNTIME DESTINATION hecore
 )

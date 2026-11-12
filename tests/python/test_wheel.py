@@ -4,7 +4,6 @@
 """Validation of an installed 'anari' wheel: the bindings, the frontend, the
 sample devices, the shipped device SDK and the wheel's dependencies."""
 
-import ctypes
 import importlib.metadata
 import os
 import pathlib
@@ -152,19 +151,34 @@ def test_dependencies_are_in_wheel_or_system():
     assert not problems, 'dependencies outside the wheel:\n' + '\n'.join(problems)
 
 
+LOAD_ALL_SCRIPT = """
+import ctypes, os, sys
+package_dir, library_dir, libraries = sys.argv[1], sys.argv[2], sys.argv[3:]
+if sys.platform == 'win32':
+    # Imports are always bound at load on Windows; search the directories of
+    # the bundled MSVC runtime (next to the extension) and of anari.dll
+    handles = [os.add_dll_directory(package_dir),
+               os.add_dll_directory(library_dir)]
+    mode = 0
+else:
+    mode = os.RTLD_NOW | os.RTLD_LOCAL
+for library in libraries:
+    ctypes.CDLL(library, mode=mode)
+"""
+
+
 def test_every_shared_library_loads_with_all_symbols_bound():
     """RTLD_NOW resolves every symbol at load, so a missing symbol or library
-    fails here instead of on first use (the frontend loads with RTLD_LAZY)."""
-    if sys.platform == 'win32':
-        # Imports are always bound at load on Windows; find the bundled MSVC
-        # runtime and anari.dll the way the frontend does at runtime
-        handles = [os.add_dll_directory(str(PACKAGE_DIR)),
-                   os.add_dll_directory(str(anari.library_dir()))]
-        mode = 0
-    else:
-        mode = os.RTLD_NOW | os.RTLD_LOCAL
-    for lib in _shared_libraries(PACKAGE_DIR):
-        ctypes.CDLL(str(lib), mode=mode)
+    fails here instead of on first use (the frontend loads with RTLD_LAZY).
+    In a separate process: libraries left loaded here would let the later
+    tests pass even where the frontend couldn't find or load them itself."""
+    libraries = [str(p) for p in _shared_libraries(PACKAGE_DIR)]
+    assert libraries
+    result = subprocess.run(
+        [sys.executable, '-c', LOAD_ALL_SCRIPT, str(PACKAGE_DIR),
+         str(anari.library_dir())] + libraries,
+        capture_output=True, text=True)
+    assert result.returncode == 0, (result.returncode, result.stderr)
 
 
 # Bindings and frontend #######################################################
@@ -259,8 +273,12 @@ def vendor_device(tmp_path_factory, empty_device_source):
 def test_vendor_device_builds_and_renders(vendor_device, load_library,
                                           render_scene):
     from conftest import HEIGHT, WIDTH
-    if sys.platform != 'win32':
-        ctypes.CDLL(str(vendor_device), mode=os.RTLD_NOW | os.RTLD_LOCAL)
+    # Every symbol binds (in a separate process, as above)
+    result = subprocess.run(
+        [sys.executable, '-c', LOAD_ALL_SCRIPT, str(PACKAGE_DIR),
+         str(anari.library_dir()), str(vendor_device)],
+        capture_output=True, text=True)
+    assert result.returncode == 0, (result.returncode, result.stderr)
     library = load_library('hecore,' + str(vendor_device.parent) + os.sep)
     pixels = render_scene(library.newDevice('default'))
     assert pixels.shape[:2] == (HEIGHT, WIDTH)

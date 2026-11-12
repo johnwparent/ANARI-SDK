@@ -119,5 +119,9 @@ environment = { ARCHFLAGS = "-arch x86_64" }
 archs = ["AMD64"]
 environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 before-build = "pip install delvewheel"
-# Check only: every DLL dependency must resolve inside the wheel or the system
-repair-wheel-command = "delvewheel show --analyze-existing {wheel} && copy {wheel} {dest_dir}"
+# No repair: report each DLL's dependencies (--analyze-existing: the SDK's
+# DLLs too; --ignore-in-wheel: resolving ones already in the wheel, such as
+# anari.dll and the MSVC runtime) and keep the wheel as built. delvewheel show
+# exits successfully even when a DLL isn't found, so this is a report only:
+# tests/python (test_dependencies_are_in_wheel_or_system) enforces it
+repair-wheel-command = "delvewheel show --ignore-in-wheel --analyze-existing {wheel} && copy {wheel} {dest_dir}"

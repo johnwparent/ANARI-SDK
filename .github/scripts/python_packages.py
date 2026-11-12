@@ -34,6 +34,14 @@ PACKAGES = [
     {'name': 'anari', 'dir': '.'},
 ]
 
+# Device packages that build against the 'anari' package (a build requirement
+# and a dependency) rather than being built from this repository's SDK. A
+# device implements the device interface of one SDK release series, so each
+# must pin 'anari~=MAJOR.MINOR.0' of the current SDK, in both places.
+ANARI_DEPENDENTS = [
+    'examples/empty_helium_device',
+]
+
 
 def sdk_version():
     cmake = (ROOT / 'CMakeLists.txt').read_text()
@@ -49,6 +57,23 @@ def package_version(package):
         sys.exit('%s/pyproject.toml names the package %r, not %r'
                  % (package['dir'], project['name'], package['name']))
     return project['version']
+
+
+def anari_pins(directory):
+    """The 'anari' requirements of a device package's pyproject.toml, as
+    (where, requirement) pairs."""
+    with open(ROOT / directory / 'pyproject.toml', 'rb') as f:
+        pyproject = tomllib.load(f)
+    found = []
+    for where, requirements in (
+            ('project.dependencies',
+             pyproject.get('project', {}).get('dependencies', [])),
+            ('build-system.requires',
+             pyproject.get('build-system', {}).get('requires', []))):
+        for requirement in requirements:
+            if re.match(r'anari\s*([~=<>!;\[]|$)', requirement):
+                found.append((where, requirement.replace(' ', '')))
+    return found
 
 
 def on_pypi(name, version):
@@ -87,6 +112,15 @@ def main():
     if len(set(versions.values())) > 1:
         errors.append('the packages must share one version: %s' % versions)
     version = versions[PACKAGES[0]['name']]
+
+    series = '.'.join(sdk.split('.')[:2]) + '.0'
+    for directory in ANARI_DEPENDENTS:
+        pins = dict(anari_pins(directory))
+        for where in ('project.dependencies', 'build-system.requires'):
+            if pins.get(where) != 'anari~=' + series:
+                errors.append('%s/pyproject.toml: %s must require '
+                              "'anari~=%s' (the SDK's release series), not %r"
+                              % (directory, where, series, pins.get(where)))
 
     if args.tag is not None and args.tag != 'v' + version:
         errors.append('the tag %s is not v%s' % (args.tag, version))

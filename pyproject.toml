@@ -89,8 +89,16 @@ environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 # system, and auditwheel would copy the toolchain's into the wheel: link them
 # statically instead, so the wheel depends on nothing but musl. (manylinux,
 # PEP 600, allows the system's libstdc++, and the manylinux toolchain already
-# links its newer symbols statically.) The libraries talk to each other through
-# ANARI's C API, so each carrying its own C++ runtime is safe.
+# links its newer symbols statically.) Each library then carries its own C++
+# runtime. That holds across them because nothing C++-runtime-owned is shared:
+# the frontend calls a device through its DeviceImpl/LibraryImpl vtables with
+# C types only, and objects are freed by the library that allocated them
+# (LibraryImpl's virtual destructor). A C++ exception a device lets escape
+# (helium doesn't catch) ends the process on every platform: the frontend's
+# ANARI_CATCH reports it and calls std::terminate(). Here it crosses into
+# another runtime, which doesn't catch it, so the process aborts without that
+# report (seen with a device throwing from newGeometry). Every musllinux C++
+# wheel carries its own libstdc++ in any case, vendors' devices included.
 select = "*-musllinux*"
 inherit.environment = "append"
 environment = { LDFLAGS = "-static-libstdc++ -static-libgcc" }

@@ -12,7 +12,8 @@ description = "Minimal helium-based ANARI device (template)"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 # The device implements the frontend's device interface (anari/backend) of the
-# SDK it was built against: depend on that SDK release series
+# SDK it was built against: depend on that SDK release series. Keep both pins
+# on the current SDK series (.github/scripts/python_packages.py checks them)
 dependencies = ["anari~=0.17.0"]
 
 [build-system]

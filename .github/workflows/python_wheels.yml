@@ -31,6 +31,7 @@ on:
       - 'src/devices/debug/**'
       - 'examples/empty_helium_device/**'
       - 'tests/python/**'
+      - '.github/scripts/**'
       - '.github/workflows/python_wheels.yml'
   pull_request:
     branches: [ main, next_release ]
@@ -70,10 +71,13 @@ jobs:
         python-version: '3.12' # tomllib
     - id: check
       name: Check the packages' versions
+      # The tag reaches the script as data, never as part of the script
+      env:
+        RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
       run: >
         python .github/scripts/python_packages.py
         --github-output "$GITHUB_OUTPUT"
-        ${{ github.ref_type == 'tag' && format('--tag {0} --require-new', github.ref_name) || '' }}
+        ${RELEASE_TAG:+--tag "$RELEASE_TAG" --require-new}
 
   build-wheels:
     name: build (${{ matrix.package.name }}, ${{ matrix.os }}, ${{ matrix.arch }})

@@ -4,6 +4,7 @@
 """Validation of an installed 'anari' wheel: the bindings, the frontend, the
 sample devices, the shipped device SDK and the wheel's dependencies."""
 
+import importlib
 import importlib.metadata
 import os
 import pathlib
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import warnings
 
 import pytest
 
@@ -31,6 +33,12 @@ def _shared_libraries(root):
     return sorted(p for p in root.rglob('*')
                   if p.is_file() and (p.suffix in SHLIB_SUFFIXES
                                       or re.search(r'\.so(\.\d+)+$', p.name)))
+
+
+def _load(name):
+    library = anari.loadLibrary(name, anari.error_status_handle)
+    assert library is not None, name
+    return library
 
 
 def _device_library(name, directory):
@@ -167,18 +175,56 @@ for library in libraries:
 """
 
 
-def test_every_shared_library_loads_with_all_symbols_bound():
-    """RTLD_NOW resolves every symbol at load, so a missing symbol or library
-    fails here instead of on first use (the frontend loads with RTLD_LAZY).
-    In a separate process: libraries left loaded here would let the later
-    tests pass even where the frontend couldn't find or load them itself."""
-    libraries = [str(p) for p in _shared_libraries(PACKAGE_DIR)]
-    assert libraries
+def _assert_loads_with_all_symbols_bound(libraries):
+    """Load the libraries with every symbol bound, in a separate process:
+    libraries left loaded here would let the later tests pass even where the
+    frontend couldn't find or load them itself."""
     result = subprocess.run(
         [sys.executable, '-c', LOAD_ALL_SCRIPT, str(PACKAGE_DIR),
-         str(anari.library_dir())] + libraries,
+         str(anari.library_dir())] + [str(p) for p in libraries],
         capture_output=True, text=True)
     assert result.returncode == 0, (result.returncode, result.stderr)
+
+
+def test_every_shared_library_loads_with_all_symbols_bound():
+    """RTLD_NOW resolves every symbol at load, so a missing symbol or library
+    fails here instead of on first use (the frontend loads with RTLD_LAZY)."""
+    libraries = _shared_libraries(PACKAGE_DIR)
+    assert libraries
+    _assert_loads_with_all_symbols_bound(libraries)
+
+
+def _macos_wheel_tag():
+    """(minimum macOS version, architecture) from the installed wheel's tag,
+    e.g. macosx_11_0_arm64 -> ((11, 0), 'arm64')."""
+    wheel = importlib.metadata.distribution('anari').read_text('WHEEL')
+    tags = re.findall(r'^Tag: .*-macosx_(\d+)_(\d+)_(\w+)$', wheel, re.M)
+    assert tags, wheel
+    major, minor, arch = tags[0]
+    return (int(major), int(minor)), arch
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS wheels only')
+def test_macos_binaries_match_the_wheel_tag():
+    """Every Mach-O binary, the static SDK libraries too, is built for the
+    wheel's architecture only and needs no newer macOS than its tag says
+    (MACOSX_DEPLOYMENT_TARGET, ARCHFLAGS)."""
+    minimum, arch = _macos_wheel_tag()
+    binaries = [p for p in PACKAGE_DIR.rglob('*') if p.is_file()
+                and p.suffix in ('.so', '.dylib', '.a')]
+    assert binaries
+    problems = []
+    for path in binaries:
+        archs = subprocess.run(['lipo', '-archs', str(path)], check=True,
+                               capture_output=True, text=True).stdout.split()
+        if archs != [arch]:
+            problems.append('%s: built for %s' % (path.name, archs))
+        commands = subprocess.run(['otool', '-l', str(path)], check=True,
+                                  capture_output=True, text=True).stdout
+        for version in re.findall(r'\bminos (\d+)\.(\d+)', commands):
+            if tuple(map(int, version)) > minimum:
+                problems.append('%s: needs macOS %s.%s' % ((path.name,) + version))
+    assert not problems, '\n'.join(sorted(set(problems)))
 
 
 # Bindings and frontend #######################################################
@@ -193,44 +239,79 @@ def test_missing_library_is_reported_not_raised():
                              anari.error_status_handle) is None
 
 
-def test_environment_library(monkeypatch, load_library):
+def test_environment_library(monkeypatch):
     monkeypatch.setenv('ANARI_LIBRARY', 'sink')
-    library = load_library('environment')
+    library = _load('environment')
     assert 'default' in library.getDeviceSubtypes()
+
+
+# Python frees objects in any order, at exit too, and freeing a Library unloads
+# its device library (anariUnloadLibrary): the bindings keep a device's
+# Library alive while anything made from it is, including through another
+# object's parameters (a debug device's wrappedDevice). In a subprocess, as
+# the crash this guards against happens at interpreter exit.
+OBJECT_LIFETIME_SCRIPTS = {
+    'objects outlive their device and library': """
+import sys, anari
+library = anari.loadLibrary(sys.argv[1], anari.error_status_handle)
+device = library.newDevice('default')
+camera = device.newCamera('perspective')
+world = device.newWorld()
+del library, device
+""",
+    'a device held only as a parameter': """
+import anari
+sink = anari.loadLibrary('sink', anari.error_status_handle).newDevice('default')
+debug = anari.loadLibrary('debug', anari.error_status_handle).newDevice('default')
+debug.setParameter('wrappedDevice', anari.DEVICE, sink)
+debug.commitParameters()
+camera = debug.newCamera('perspective')
+del sink
+""",
+}
+
+
+@pytest.mark.parametrize('name', ['sink', 'debug'])
+@pytest.mark.parametrize('script', sorted(OBJECT_LIFETIME_SCRIPTS))
+def test_objects_keep_their_library_loaded(script, name):
+    env = dict(os.environ, ANARI_DEBUG_WRAPPED_LIBRARY='sink')
+    result = subprocess.run(
+        [sys.executable, '-c', OBJECT_LIFETIME_SCRIPTS[script], name],
+        capture_output=True, text=True, env=env)
+    assert result.returncode == 0, (result.returncode, result.stderr)
 
 
 # Sample devices ##############################################################
 
-def test_sink_introspection(load_library):
-    library = load_library('sink')
+def test_sink_introspection():
+    library = _load('sink')
     assert library.getDeviceSubtypes()
     device = library.newDevice('default')
     assert device.getObjectSubtypes(anari.GEOMETRY)
 
 
-def test_scene_on_sink(load_library, render_scene):
+def test_scene_on_sink(render_scene):
     from conftest import HEIGHT, WIDTH
-    device = load_library('sink').newDevice('default')
+    device = _load('sink').newDevice('default')
     pixels = render_scene(device)
     assert pixels.shape == (HEIGHT, WIDTH, 4)
 
 
-def test_scene_on_debug_wrapping_sink(load_library, render_scene):
+def test_scene_on_debug_wrapping_sink(render_scene):
     from conftest import HEIGHT, WIDTH
-    sink = load_library('sink').newDevice('default')
-    debug = load_library('debug').newDevice('default')
+    sink = _load('sink').newDevice('default')
+    debug = _load('debug').newDevice('default')
     debug.setParameter('wrappedDevice', anari.DEVICE, sink)
     pixels = render_scene(debug)
     assert pixels.shape == (HEIGHT, WIDTH, 4)
 
 
-def test_scene_on_debug_wrapping_from_environment(monkeypatch, load_library,
-                                                  render_scene):
+def test_scene_on_debug_wrapping_from_environment(monkeypatch, render_scene):
     """The debug device loads ANARI_DEBUG_WRAPPED_LIBRARY through the shipped
     shared libanari, which finds sink next to it."""
     from conftest import HEIGHT, WIDTH
     monkeypatch.setenv('ANARI_DEBUG_WRAPPED_LIBRARY', 'sink')
-    debug = load_library('debug').newDevice('default')
+    debug = _load('debug').newDevice('default')
     pixels = render_scene(debug)
     assert pixels.shape == (HEIGHT, WIDTH, 4)
 
@@ -270,16 +351,10 @@ def vendor_device(tmp_path_factory, empty_device_source):
     return found[0]
 
 
-def test_vendor_device_builds_and_renders(vendor_device, load_library,
-                                          render_scene):
+def test_vendor_device_builds_and_renders(vendor_device, render_scene):
     from conftest import HEIGHT, WIDTH
-    # Every symbol binds (in a separate process, as above)
-    result = subprocess.run(
-        [sys.executable, '-c', LOAD_ALL_SCRIPT, str(PACKAGE_DIR),
-         str(anari.library_dir()), str(vendor_device)],
-        capture_output=True, text=True)
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    library = load_library('hecore,' + str(vendor_device.parent) + os.sep)
+    _assert_loads_with_all_symbols_bound([vendor_device])
+    library = _load('hecore,' + str(vendor_device.parent) + os.sep)
     pixels = render_scene(library.newDevice('default'))
     assert pixels.shape[:2] == (HEIGHT, WIDTH)
 
@@ -302,12 +377,18 @@ def device_package(tmp_path_factory, empty_device_source):
                     '--no-build-isolation', '--no-index', str(source)],
                    check=True, env=env)
     yield
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'hecore'],
-                   check=True)
+    # Best effort: on Windows the loaded anari_library_hecore.dll can't be
+    # deleted, which mustn't turn a passing session into a teardown error
+    result = subprocess.run(
+        [sys.executable, '-m', 'pip', 'uninstall', '-y', 'hecore'],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        warnings.warn('could not uninstall hecore: ' + result.stderr)
 
 
 def test_device_package_installs_and_renders(device_package, render_scene):
     from conftest import HEIGHT, WIDTH
+    importlib.invalidate_caches()  # installed after this process started
     import hecore
     location = pathlib.Path(hecore.__file__).resolve().parent
     assert location.parent == PACKAGE_DIR.parent  # next to anari

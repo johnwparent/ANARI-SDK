@@ -41,10 +41,11 @@ include(GNUInstallDirs)
 
 ## Dependencies ##
 
-# Built as a Python package (pip install, see pyproject.toml): use the ANARI SDK
-# shipped in the 'anari' package that the build depends on, which is also the
-# one the device will load into
-if (DEFINED PY_BUILD_CMAKE_VERSION AND NOT anari_DIR)
+# Built on its own as a Python package (pip install, see pyproject.toml): use
+# the ANARI SDK shipped in the 'anari' package that the build depends on, which
+# is also the one the device will load into. (Inside the SDK's tree,
+# cmake/Findanari.cmake provides anari instead.)
+if (STANDALONE_SOURCE_TREE AND DEFINED PY_BUILD_CMAKE_VERSION AND NOT anari_DIR)
   execute_process(
     COMMAND ${PY_BUILD_CMAKE_BUILD_PYTHON_INTERPRETER} -m anari --cmake-dir
     OUTPUT_VARIABLE anari_DIR

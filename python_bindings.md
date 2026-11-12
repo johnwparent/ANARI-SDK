@@ -32,10 +32,11 @@ library = anari.loadLibrary('sink')   # sample devices ship in the wheel
 device = library.newDevice('default')
 ```
 
-`anari.loadLibrary(name)` first looks for `name` among the libraries shipped in
-the package (`anari.library_dir()`: the `sink` and `debug` sample devices), then
-through the frontend's usual search. `'name,<directory>/'` loads a device from
-a given directory.
+`anari.loadLibrary(name)` loads the libraries shipped in the package
+(`anari.library_dir()`: the `sink` and `debug` sample devices) from the
+package, and any other name through the frontend's usual search.
+`'name,<directory>/'` loads a device from a given directory. Devices and
+objects keep their library loaded, so they can be released in any order.
 
 ## Building
 

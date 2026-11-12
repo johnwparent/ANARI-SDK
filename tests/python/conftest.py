@@ -103,24 +103,8 @@ def empty_device_source():
     path = pathlib.Path(env) if env else \
         HERE.parent.parent / 'examples' / 'empty_helium_device'
     if not (path / 'CMakeLists.txt').is_file():
-        pytest.skip('examples/empty_helium_device not found at ' + str(path))
+        message = 'examples/empty_helium_device not found at ' + str(path)
+        if os.environ.get('ANARI_WHEEL_REQUIRE_VENDOR_BUILD'):
+            pytest.fail(message)
+        pytest.skip(message)
     return path
-
-
-@pytest.fixture(scope='session')
-def load_library():
-    """anari.loadLibrary(), with each Library kept alive for the whole
-    session: freeing a Library unloads its device library, so it has to
-    outlive every device and object made from it (as a device package's
-    module-level 'library' does), whatever order Python frees them in."""
-    import anari
-
-    libraries = []
-
-    def load(name):
-        library = anari.loadLibrary(name, anari.error_status_handle)
-        assert library is not None, name
-        libraries.append(library)
-        return library
-
-    yield load

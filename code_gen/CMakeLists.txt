@@ -192,10 +192,11 @@ target_link_libraries(anari_api PRIVATE Python3::Module anari_static)
 
 set(ANARI_MODULE_NAME anari_api)
 # The Python package's version: the SDK's, or a post-release of it for a
-# packaging-only respin (0.17.0.post1), which py-build-cmake passes on
+# packaging-only respin (0.17.0.post1), which py-build-cmake passes on (as a
+# cache variable, so it survives a reconfigure of its build tree)
 set(ANARI_PYTHON_PACKAGE_VERSION ${ANARI_SDK_VERSION})
-if (DEFINED ENV{PY_BUILD_CMAKE_PACKAGE_VERSION})
-  set(ANARI_PYTHON_PACKAGE_VERSION $ENV{PY_BUILD_CMAKE_PACKAGE_VERSION})
+if (DEFINED PY_BUILD_CMAKE_PACKAGE_VERSION)
+  set(ANARI_PYTHON_PACKAGE_VERSION ${PY_BUILD_CMAKE_PACKAGE_VERSION})
 endif()
 configure_file(${ANARI_CODE_GEN_ROOT}/__init__.py.in ${CMAKE_CURRENT_BINARY_DIR}/__init__.py)
 

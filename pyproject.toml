@@ -3,8 +3,7 @@
 
 [project] # Project metadata
 name = "anari"
-# The SDK version (ANARI_SDK_VERSION in CMakeLists.txt), or a post-release of
-# it (0.17.0.post1) for a packaging-only respin; see python_bindings.md
+# ANARI_SDK_VERSION, or a post-release of it (0.17.0.post1)
 version = "0.17.0"
 description = "Python bindings and device SDK for the Khronos ANARI rendering API"
 requires-python = ">=3.10"
@@ -41,10 +40,8 @@ minimum_version = "3.15"
 build_type = "Release"
 source_path = "."
 build_args = ["--parallel"]
-# "" is the default install (the SDK: headers, libraries, CMake package and
-# code_gen); python_module is the cffi bindings and the Python package
+# "": the SDK; python_module: the bindings
 install_components = ["", "python_module"]
-# Strip symbols from the installed shared libraries (a no-op with MSVC)
 install_args = ["--strip"]
 
 [tool.py-build-cmake.cmake.options]
@@ -59,7 +56,7 @@ BUILD_CAPTURE_DEVICE = "OFF"
 BUILD_SINK_DEVICE = "ON"
 BUILD_DEBUG_DEVICE = "ON"
 INSTALL_VIEWER_LIBRARY = "OFF"
-# The SDK installs as a normal prefix inside the package: site-packages/anari/sdk
+# The SDK is installed as a prefix inside the package
 CMAKE_INSTALL_BINDIR = "anari/sdk/bin"
 CMAKE_INSTALL_LIBDIR = "anari/sdk/lib"
 CMAKE_INSTALL_INCLUDEDIR = "anari/sdk/include"
@@ -67,13 +64,11 @@ CMAKE_INSTALL_DATAROOTDIR = "anari/sdk/share"
 
 [tool.cibuildwheel]
 build = "cp3*"
-# Free-threaded CPython is not supported by the cffi module (and PyPy builds
-# are off by default)
+# The cffi module doesn't support free-threaded CPython
 skip = ["*t-*"]
 build-frontend = "build"
 test-requires = []
-# Quick smoke test in the build environment; the full validation suite
-# (tests/python) runs in separate jobs against the installed wheels
+# Smoke test only; tests/python is the full suite
 test-command = "python -c \"import anari; assert anari.loadLibrary('sink') is not None\""
 
 [tool.cibuildwheel.linux]
@@ -85,34 +80,19 @@ musllinux-aarch64-image = "musllinux_1_2"
 environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 
 [[tool.cibuildwheel.overrides]]
-# musllinux (PEP 656) doesn't allow linking libstdc++/libgcc_s from the
-# system, and auditwheel would copy the toolchain's into the wheel: link them
-# statically instead, so the wheel depends on nothing but musl. (manylinux,
-# PEP 600, allows the system's libstdc++, and the manylinux toolchain already
-# links its newer symbols statically.) Each library then carries its own C++
-# runtime. That holds across them because nothing C++-runtime-owned is shared:
-# the frontend calls a device through its DeviceImpl/LibraryImpl vtables with
-# C types only, and objects are freed by the library that allocated them
-# (LibraryImpl's virtual destructor). A C++ exception a device lets escape
-# (helium doesn't catch) ends the process on every platform: the frontend's
-# ANARI_CATCH reports it and calls std::terminate(). Here it crosses into
-# another runtime, which doesn't catch it, so the process aborts without that
-# report (seen with a device throwing from newGeometry). Every musllinux C++
-# wheel carries its own libstdc++ in any case, vendors' devices included.
+# musllinux can't link the system's libstdc++: link it statically. Safe as the
+# frontend and devices share only C types and free what they allocate.
 select = "*-musllinux*"
 inherit.environment = "append"
 environment = { LDFLAGS = "-static-libstdc++ -static-libgcc" }
 
 [tool.cibuildwheel.macos]
-# Dual-architecture: one wheel for Apple silicon and one for Intel, each built
-# for its own architecture (ARCHFLAGS, below), so a vendor's device links the
-# SDK's static libraries for the architecture it builds for
+# One wheel per architecture, not universal2: the static SDK libraries are
+# linked by vendors for one architecture
 archs = ["arm64", "x86_64"]
-# Read by py-build-cmake for CMAKE_OSX_DEPLOYMENT_TARGET and the wheel tag
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0", CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 
-# Read by py-build-cmake for CMAKE_OSX_ARCHITECTURES and the wheel tag (and
-# what cibuildwheel sets itself when it cross-compiles)
+# py-build-cmake maps ARCHFLAGS to CMAKE_OSX_ARCHITECTURES and the wheel tag
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_arm64"
 inherit.environment = "append"
@@ -127,9 +107,5 @@ environment = { ARCHFLAGS = "-arch x86_64" }
 archs = ["AMD64"]
 environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 before-build = "pip install delvewheel"
-# No repair: report each DLL's dependencies (--analyze-existing: the SDK's
-# DLLs too; --ignore-in-wheel: resolving ones already in the wheel, such as
-# anari.dll and the MSVC runtime) and keep the wheel as built. delvewheel show
-# exits successfully even when a DLL isn't found, so this is a report only:
-# tests/python (test_dependencies_are_in_wheel_or_system) enforces it
+# Report DLL dependencies without repairing; tests/python enforces them
 repair-wheel-command = "delvewheel show --ignore-in-wheel --analyze-existing {wheel} && copy {wheel} {dest_dir}"

@@ -1,11 +1,8 @@
 # Copyright 2026 The Khronos Group
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared fixtures for the 'anari' wheel validation suite.
-
-The suite tests an *installed* anari wheel. Run it from a directory outside
-the ANARI-SDK checkout so 'import anari' can only resolve to site-packages.
-"""
+"""Validation suite for an installed 'anari' wheel. Run it from outside the
+ANARI-SDK checkout, so 'import anari' resolves to site-packages."""
 
 import os
 import pathlib
@@ -19,9 +16,8 @@ HEIGHT = 48
 
 
 def render_tutorial_scene(device):
-    """Build and render the scene of examples/python/anari_tutorial_device.py
-    (a two-triangle mesh, a camera, a light and a renderer) and return the
-    mapped color channel as an ndarray."""
+    """Render examples/python/anari_tutorial_device.py's scene; return the
+    color channel."""
     import anari
     import numpy as np
 
@@ -96,12 +92,7 @@ def render_scene():
 
 @pytest.fixture(scope='session')
 def empty_device_source():
-    """Source of examples/empty_helium_device: $ANARI_EMPTY_DEVICE_SOURCE, or
-    its place relative to this directory in an ANARI-SDK tree (or a sparse
-    copy of tests/python and examples/empty_helium_device)."""
-    env = os.environ.get('ANARI_EMPTY_DEVICE_SOURCE')
-    path = pathlib.Path(env) if env else \
-        HERE.parent.parent / 'examples' / 'empty_helium_device'
+    path = HERE.parent.parent / 'examples' / 'empty_helium_device'
     if not (path / 'CMakeLists.txt').is_file():
         message = 'examples/empty_helium_device not found at ' + str(path)
         if os.environ.get('ANARI_WHEEL_REQUIRE_VENDOR_BUILD'):

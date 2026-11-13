@@ -41,10 +41,7 @@ include(GNUInstallDirs)
 
 ## Dependencies ##
 
-# Built on its own as a Python package (pip install, see pyproject.toml): use
-# the ANARI SDK shipped in the 'anari' package that the build depends on, which
-# is also the one the device will load into. (Inside the SDK's tree,
-# cmake/Findanari.cmake provides anari instead.)
+# Built by pip (pyproject.toml): use the SDK in the 'anari' package
 if (STANDALONE_SOURCE_TREE AND DEFINED PY_BUILD_CMAKE_VERSION AND NOT anari_DIR)
   execute_process(
     COMMAND ${PY_BUILD_CMAKE_BUILD_PYTHON_INTERPRETER} -m anari --cmake-dir
@@ -104,9 +101,6 @@ anari_generate_queries(
 
 ## Python package ##
 
-# The device library and a module that loads it (code_gen's
-# device_trampoline.py.in), installed as the 'hecore' Python package by
-# pyproject.toml (install_components): 'import hecore; hecore.newDevice()'
 set(DEVICE_LIBRARY_NAME hecore)
 configure_file(${ANARI_CODE_GEN_ROOT}/device_trampoline.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/__init__.py)

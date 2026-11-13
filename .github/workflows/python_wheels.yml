@@ -3,21 +3,13 @@
 
 name: Python wheels
 
-# Builds the 'anari' Python wheels (the cffi bindings, the frontend, the sink
-# and debug sample devices and the device SDK) with cibuildwheel, validates the
-# built wheels in separate jobs that never check out the SDK's sources, and
-# publishes them to PyPI through Trusted Publishing (OIDC) when a v* tag is
-# pushed and the 'pypi' environment's reviewers approve. Compilation and
-# deployment are separate jobs: only the publish jobs get an OIDC token, and
-# they build nothing.
-#
-# The artifact actions stay on v4, which GitHub supports and which act's local
-# artifact server understands, so this workflow can be run locally with act.
+# Build, validate and (on v* tags) publish the 'anari' wheels.
+# Artifact actions stay on v4 so the workflow runs under act.
 
 on:
   push:
     branches: [ next_release ]
-    tags: [ 'v*' ] # path filters don't apply to tag pushes
+    tags: [ 'v*' ]
     paths: &wheel_paths
       - 'pyproject.toml'
       - 'CMakeLists.txt'
@@ -51,11 +43,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The packages to build (.github/scripts/python_packages.py) and their
-  # version: the SDK's, or a post-release of it, shared by every package, equal
-  # to the tag on a release, and new to PyPI. PyPI never accepts a version
-  # twice, so a release tag that was moved or re-pushed fails here, before
-  # anything is built or approved; other runs only warn.
+  # Fails a release whose version doesn't match the tag or is already on PyPI
   check-version:
     runs-on: ubuntu-24.04
     outputs:
@@ -71,8 +59,7 @@ jobs:
         python-version: '3.12' # tomllib
     - id: check
       name: Check the packages' versions
-      # The tag reaches the script as data, never as part of the script
-      env:
+      env: # not interpolated into the script
         RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
       run: >
         python .github/scripts/python_packages.py
@@ -89,13 +76,11 @@ jobs:
         package: ${{ fromJSON(needs.check-version.outputs.packages) }}
         os: [ ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel, windows-latest ]
         include:
-        - { os: ubuntu-24.04,     arch: x86_64 }  # manylinux_2_28 + musllinux_1_2
-        - { os: ubuntu-24.04-arm, arch: aarch64 } # manylinux_2_28 + musllinux_1_2
-        # MACOSX_DEPLOYMENT_TARGET 11.0, ARCHFLAGS per architecture: each built
-        # on its own architecture, so its wheels are tested natively
+        - { os: ubuntu-24.04,     arch: x86_64 }
+        - { os: ubuntu-24.04-arm, arch: aarch64 }
         - { os: macos-14,         arch: arm64 }
         - { os: macos-15-intel,   arch: x86_64 }
-        - { os: windows-latest,   arch: AMD64 }   # MSVC Latest
+        - { os: windows-latest,   arch: AMD64 }
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -113,18 +98,7 @@ jobs:
         path: wheelhouse/*.whl
         if-no-files-found: error
 
-  # Installs the built wheels into a clean Python and runs tests/python
-  # against them: the bindings, the frontend, the sample devices rendering the
-  # tutorial scene, every shared library loading with all symbols bound, the
-  # wheel's dependencies, and a vendor device (examples/empty_helium_device)
-  # built with nothing but the wheel. Only tests/python and the template
-  # device are checked out, so nothing can resolve from the SDK's sources.
-  #
-  # On a hosted runner the interpreter from setup-python is already a clean,
-  # job-private environment, so the steps use it directly (forcing the built
-  # wheels over any copy a reused interpreter has): each is a plain
-  # 'python -m ...' line that means the same in every runner's default shell
-  # (bash, or pwsh on Windows), with values passed as ${{ }} expressions.
+  # tests/python against the installed wheels, without the SDK's sources
   validate:
     name: validate (${{ matrix.name }}, Python ${{ matrix.python }})
     needs: [ check-version, build-wheels ]
@@ -142,7 +116,7 @@ jobs:
         - { name: Windows AMD64,     os: windows-latest }
     env:
       ANARI_WHEEL_REQUIRE_VENDOR_BUILD: '1'
-      LD_BIND_NOW: '1' # Linux: bind every symbol at load (ignored elsewhere)
+      LD_BIND_NOW: '1' # Linux: fail on missing symbols at load
     steps:
     - name: Check out only the validation suite and the template device
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -164,16 +138,12 @@ jobs:
     - name: Install the validation suite's requirements
       run: python -m pip install -r tests/python/requirements.txt cffi numpy
     - name: Install the built wheels
-      # --no-index: PyPI's packages must never stand in for the built wheels;
-      # --force-reinstall: nor may a copy already in a reused interpreter
-      # (a self-hosted runner's, or act's persistent tool cache)
+      # Never PyPI's, nor a copy already in a reused interpreter
       run: python -m pip install --no-index --no-deps --force-reinstall --find-links dist ${{ needs.check-version.outputs.requirements }}
     - name: Run the validation suite
       run: python -m pytest tests/python -v -p no:cacheprovider
 
-  # The musllinux wheels, in Alpine containers. The steps run in the container
-  # through 'docker run' rather than a job container: actions/checkout and
-  # download-artifact are JavaScript actions, which don't run on musl.
+  # 'docker run', not a job container: JavaScript actions don't run on musl
   validate-musllinux:
     name: validate (musllinux ${{ matrix.arch }}, Python ${{ matrix.python }})
     needs: [ check-version, build-wheels ]
@@ -235,8 +205,7 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
     needs: [ check-version, validate, validate-musllinux ]
     runs-on: ubuntu-24.04
-    # The environment's required reviewers approve each release
-    environment:
+    environment: # its reviewers approve each release
       name: pypi
       url: https://pypi.org/project/anari/${{ needs.check-version.outputs.version }}/
     permissions:

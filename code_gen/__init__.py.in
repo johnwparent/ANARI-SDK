@@ -4,19 +4,16 @@ import os as _os
 import sys as _sys
 from pathlib import Path as _Path
 
-# The package's version (the SDK's, or a post-release of it) and the SDK's
 __version__ = '${ANARI_PYTHON_PACKAGE_VERSION}'
 sdk_version = '${ANARI_SDK_VERSION}'
 
 def sdk_dir():
-    """Install prefix of the ANARI SDK shipped in this package (headers,
-    libraries, CMake package and code_gen), or None if absent."""
+    """Install prefix of the SDK shipped in this package, or None."""
     path = _Path(__file__).resolve().parent / 'sdk'
     return path if path.is_dir() else None
 
 def cmake_dir():
-    """Directory holding anariConfig.cmake: pass it as anari_DIR (or add it to
-    CMAKE_PREFIX_PATH) to build devices with find_package(anari)."""
+    """anari_DIR for find_package(anari)."""
     sdk = sdk_dir()
     if sdk is None:
         return None
@@ -24,13 +21,12 @@ def cmake_dir():
     return found[-1] if found else None
 
 def include_dir():
-    """Directory holding anari/anari.h and the device (helium) headers."""
+    """Directory holding anari/anari.h."""
     sdk = sdk_dir()
     return None if sdk is None else sdk / 'include'
 
 def library_dir():
-    """Directory holding the shared libraries: libanari and the sample devices
-    (anari_library_sink, anari_library_debug)."""
+    """Directory holding libanari and the sink and debug devices."""
     sdk = sdk_dir()
     if sdk is None:
         return None
@@ -84,15 +80,9 @@ class Object:
     def __init__(self, device, handle, owner = None):
         self.device = device
         self.handle = handle
-        # What created this object (its Device, or a device's Library), kept
-        # alive with it: freeing a Library unloads the device library
-        # (anariUnloadLibrary), which must not happen while an object made from
-        # it still has to be released through it
+        # Keeps the device library loaded until this object is released
         self._owner = owner
-        # The objects set as this object's parameters (or held by this array),
-        # kept alive as long as the device holds them, by name: the device
-        # retains an object parameter, and may release it only when this
-        # object is released, which Python does before these references
+        # Object parameters, by name: keeps their libraries loaded too
         self._references = {}
         lib.anariRetain(self.device, self.device)
 
@@ -552,8 +542,7 @@ class Library:
 
 
 def _shipped_library(name):
-    """'name,<library_dir()>/' if this package ships the library 'name' (the
-    'sink' and 'debug' sample devices), else None."""
+    """'name,<library_dir()>/' if this package ships 'name', else None."""
     libdir = library_dir()
     if libdir is None or ',' in name:
         return None
@@ -565,11 +554,8 @@ def _shipped_library(name):
     return name + ',' + str(libdir) + _os.sep
 
 def loadLibrary(name, callback = ffi.NULL):
-    """Load an ANARI library by name, or 'name,<directory>/' for one at a given
-    location. A library this package ships (library_dir(): the 'sink' and
-    'debug' sample devices) is loaded from the package, and only from there;
-    any other name goes through the frontend's usual library search. For
-    'environment', the name in ANARI_LIBRARY is looked up the same way."""
+    """Load an ANARI library by name, or 'name,<directory>/'. Libraries this
+    package ships load from the package; others use the frontend's search."""
     cbwrapper = ffi.NULL if callback == ffi.NULL else lib.ANARIStatusCallback_python
     lookup = name
     if name == 'environment' and _os.environ.get('ANARI_LIBRARY'):

@@ -1,7 +1,5 @@
-# Requirements of the wheel validation suite (beyond the 'anari' wheel itself)
 pytest
-# CMake for building examples/empty_helium_device against the wheel, and
-# py-build-cmake for building it as a Python package (its pyproject.toml)
+# Builds examples/empty_helium_device against the wheel
 cmake
 py-build-cmake~=0.5.1
 pyelftools; sys_platform == "linux"

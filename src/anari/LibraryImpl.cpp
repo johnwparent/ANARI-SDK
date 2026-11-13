@@ -14,6 +14,8 @@
 #include <sys/times.h>
 #endif
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <vector>
 
@@ -54,12 +56,7 @@ std::string library_location()
   std::string path = std::string(pathBuf);
   path.resize(path.rfind('\\') + 1);
 #else
-  // Ask about an address in this library itself, not a dlsym(RTLD_DEFAULT)
-  // lookup: that only searches the global scope, which this library isn't in
-  // when it was loaded with RTLD_LOCAL (e.g. as the dependency of a device
-  // that Python or another frontend dlopen()ed), and could find another copy
-  // of the frontend in the process. This function has internal linkage, so its
-  // address can't be interposed by another library's symbol.
+  // dlsym(RTLD_DEFAULT) misses this library when it was loaded RTLD_LOCAL
   Dl_info di;
   int ret = dladdr(reinterpret_cast<void *>(&library_location), &di);
   if (!ret || !di.dli_fname)
@@ -71,6 +68,17 @@ std::string library_location()
 
   return path;
 }
+
+#ifdef _WIN32
+// C:\... or \\server\...; "C:foo" and "\foo" are relative
+bool isAbsolutePath(const std::string &path)
+{
+  auto separator = [](char c) { return c == '\\' || c == '/'; };
+  return (path.size() >= 3 && std::isalpha(static_cast<unsigned char>(path[0]))
+             && path[1] == ':' && separator(path[2]))
+      || (path.size() >= 2 && separator(path[0]) && separator(path[1]));
+}
+#endif
 
 } // namespace
 
@@ -115,7 +123,17 @@ static void *loadLibrary(
 
     // Load the library
     std::string fullName = libLocation + file + ".dll";
-    lib = LoadLibrary(fullName.c_str());
+    if (isAbsolutePath(fullName)) {
+      // Prefer dependencies next to the device; the altered search needs '\'
+      std::replace(fullName.begin(), fullName.end(), '/', '\\');
+      lib = LoadLibraryExA(
+          fullName.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+      // The altered search skips the executable's directory
+      if (lib == nullptr)
+        lib = LoadLibraryA(fullName.c_str());
+    } else {
+      lib = LoadLibraryA(fullName.c_str());
+    }
     if (lib == nullptr) {
       DWORD err = GetLastError();
       LPTSTR lpMsgBuf;

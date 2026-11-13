@@ -36,8 +36,6 @@ cmake_dependent_option(LINK_BINDINGS_TO_RELEASE_PYTHON "Force the python binding
 
 option(INSTALL_LEGACY_PYTHON_BINDINGS "Install legacy python bindings" OFF) # If turned on, draws in all the custom targets below (generate_all)
 
-# Set by pyproject.toml when building the 'anari' Python wheel: installs the
-# package's helpers and, on Windows, the MSVC runtime next to the extension
 option(ANARI_PYTHON_WHEEL "Build the 'anari' Python wheel (used by pyproject.toml)" OFF)
 mark_as_advanced(ANARI_PYTHON_WHEEL)
 
@@ -191,9 +189,7 @@ target_compile_definitions(anari_api PRIVATE
 target_link_libraries(anari_api PRIVATE Python3::Module anari_static)
 
 set(ANARI_MODULE_NAME anari_api)
-# The Python package's version: the SDK's, or a post-release of it for a
-# packaging-only respin (0.17.0.post1), which py-build-cmake passes on (as a
-# cache variable, so it survives a reconfigure of its build tree)
+# pyproject.toml's version when built by py-build-cmake (may be a .postN)
 set(ANARI_PYTHON_PACKAGE_VERSION ${ANARI_SDK_VERSION})
 if (DEFINED PY_BUILD_CMAKE_PACKAGE_VERSION)
   set(ANARI_PYTHON_PACKAGE_VERSION ${PY_BUILD_CMAKE_PACKAGE_VERSION})
@@ -224,11 +220,7 @@ if (ANARI_PYTHON_WHEEL)
     COMPONENT python_module
     DESTINATION anari)
 
-  # The extension and the SDK's libraries use the dynamic MSVC runtime (/MD,
-  # CMake's default), so the static helium/anari_backend libraries shipped in
-  # the wheel link with vendors' default builds. Python doesn't ship the C++
-  # runtime (msvcp140.dll), so it goes next to anari_api.pyd, where Python
-  # looks for an extension's DLL dependencies; devices loaded later reuse it.
+  # Python doesn't ship msvcp140.dll; next to the extension, Python finds it
   if (WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION anari)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT python_module)

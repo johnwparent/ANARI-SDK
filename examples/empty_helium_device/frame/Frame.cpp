@@ -81,8 +81,7 @@ void Frame::renderFrame()
 {
   auto start = std::chrono::steady_clock::now();
 
-  // anariCommitParameters() only queues objects in helium's commit buffer:
-  // flush it so this frame, and every object it reaches, is up to date.
+  // Apply pending commits before rendering
   deviceState()->commitBuffer.flush();
 
   // This is where the actual rendering work is done. As a placeholder we just

@@ -2,17 +2,9 @@
 # Copyright 2026 The Khronos Group
 # SPDX-License-Identifier: Apache-2.0
 
-"""The Python packages built from this repository, and the checks on their
-versions that .github/workflows/python_wheels.yml runs before building.
+"""Check the Python packages' versions against the SDK, the tag and PyPI.
 
-Every package is versioned in lockstep with the SDK (ANARI_SDK_VERSION in
-CMakeLists.txt): a device package's wheel links helium from one SDK release,
-so 'anari[all]' pins its device packages with '=='. A packaging-only respin
-of a release is a PEP 440 post-release of the SDK version (0.17.0.post1), as
-PyPI never accepts a version (or a file name) twice.
-
-  python .github/scripts/python_packages.py [--tag vX.Y.Z] [--require-new]
-                                            [--offline] [--github-output FILE]
+Versions are ANARI_SDK_VERSION, or a post-release of it (0.17.0.post1).
 """
 
 import argparse
@@ -26,18 +18,12 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-# Each package is a pyproject.toml directory, relative to the repository root.
-# To add a device package (e.g. {'name': 'helide', 'dir': 'src/devices/helide'}),
-# list it here, give it a Trusted Publisher on PyPI, and only then add it to
-# anari's [project.optional-dependencies] (see python_bindings.md).
+# Built and published by the workflow; 'dir' holds the pyproject.toml
 PACKAGES = [
     {'name': 'anari', 'dir': '.'},
 ]
 
-# Device packages that build against the 'anari' package (a build requirement
-# and a dependency) rather than being built from this repository's SDK. A
-# device implements the device interface of one SDK release series, so each
-# must pin 'anari~=MAJOR.MINOR.0' of the current SDK, in both places.
+# Must require 'anari~=MAJOR.MINOR.0' of the current SDK, to build and to run
 ANARI_DEPENDENTS = [
     'examples/empty_helium_device',
 ]
@@ -60,8 +46,7 @@ def package_version(package):
 
 
 def anari_pins(directory):
-    """The 'anari' requirements of a device package's pyproject.toml, as
-    (where, requirement) pairs."""
+    """(where, requirement) for each 'anari' requirement in pyproject.toml."""
     with open(ROOT / directory / 'pyproject.toml', 'rb') as f:
         pyproject = tomllib.load(f)
     found = []
@@ -77,7 +62,7 @@ def anari_pins(directory):
 
 
 def on_pypi(name, version):
-    """True if PyPI has this release (even yanked), False if not."""
+    """True if PyPI has this release, yanked or not."""
     url = 'https://pypi.org/pypi/%s/%s/json' % (name, version)
     try:
         with urllib.request.urlopen(url, timeout=30):

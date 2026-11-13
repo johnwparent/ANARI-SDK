@@ -9,7 +9,8 @@ version = "0.1.0"
 description = "Minimal helium-based ANARI device (template)"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-# The SDK series whose device interface this implements
+# The SDK series whose device interface this implements; checked by
+# .github/scripts/python_packages.py
 dependencies = ["anari~=0.17.0"]
 
 [build-system]

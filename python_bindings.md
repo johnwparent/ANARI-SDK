@@ -217,3 +217,25 @@ However since those dependencies are not part of the standardized base environme
 If the device for example relies on OpenGL one could apt install the required packages (mesa etc.) in the `before-all` step and just naively add `OpenGL::OpenGL` to the `target_link_libraries`. This would then likely lead to libgl.so and other parts of the mesa infrastructure to get copied into the package which is likely undesirable.
 
 To avoid this issue the device should be kept clean of dynamic link dependencies. In the above opengl example this could be accomplished by using a gl loader library like [glad](https://github.com/dav1dde/glad) which will fetch the entrypoints dynamically (`dlsym` etc.) instead of linking against it at compile time triggering the package inclusion.
+
+# CI
+
+`.github/workflows/python_wheels.yml` builds and validates the `anari` wheels:
+
+1. `check-version` checks the packages' versions (see below), and
+   `build-wheels` runs cibuildwheel (configured in `[tool.cibuildwheel]`) on
+   Linux x86_64/aarch64 (manylinux_2_28 and musllinux_1_2 containers), macOS
+   arm64 and x86_64 (each on its own runner, `MACOSX_DEPLOYMENT_TARGET=11.0`,
+   `ARCHFLAGS`) and Windows (MSVC), for every
+   supported CPython, with a smoke test of each wheel.
+2. `validate` (glibc, macOS, Windows) and `validate-musllinux` (Alpine
+   containers) install the built wheels into clean environments (oldest and
+   newest Python) and run `tests/python`. It checks
+   out only `tests/python` and `examples/empty_helium_device`, never the SDK's
+   sources.
+
+The packages and their checks are in `.github/scripts/python_packages.py`,
+which `check-version` runs first: every package's version must be the SDK's
+(`ANARI_SDK_VERSION` in `CMakeLists.txt`) or a post-release of it, all packages
+share it, and each device package that builds against the `anari` wheel
+(`ANARI_DEPENDENTS`) must require `anari~=<the SDK's release series>`.

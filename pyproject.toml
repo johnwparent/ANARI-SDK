@@ -81,7 +81,9 @@ environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
 
 [[tool.cibuildwheel.overrides]]
 # musllinux can't link the system's libstdc++: link it statically. Safe as the
-# frontend and devices share only C types and free what they allocate.
+# frontend and devices share only C types and free what they allocate. But an
+# exception escaping a device then bypasses the frontend's ANARI_CATCH: the
+# process still aborts, as designed, without the frontend's error message.
 select = "*-musllinux*"
 inherit.environment = "append"
 environment = { LDFLAGS = "-static-libstdc++ -static-libgcc" }
